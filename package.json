@@ -1,6 +1,6 @@
 {
   "name": "safe-webview-bridge",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Safe Webview Bridge",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
