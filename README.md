@@ -1,4 +1,4 @@
-# safe-webview-bridge
+# 🌉 safe-webview-bridge
 
 A TypeScript library that enables type-safe communication between React Native WebView and Web using zod schemas for message type safety.
 
