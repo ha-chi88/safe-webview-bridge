@@ -21,6 +21,10 @@
   ],
   "author": "ha-chi88",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ha-chi88/safe-webview-bridge.git"
+  },
   "packageManager": "pnpm@10.6.2",
   "dependencies": {
     "zod": "^4.1.11"
