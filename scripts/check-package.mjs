@@ -80,13 +80,14 @@ try {
       dependencies: { "safe-webview-bridge": `file:${path.join(temporary, tarball)}` },
     }),
   );
-  // The registry dependency is already in pnpm's store. The consumer has no schema vendor or React.
+  // Reuse stored packages, but allow a clean CI runner to fetch semver metadata.
+  // The isolated consumer has no schema vendor or React.
   run(
     "corepack",
     [
       "pnpm",
       "install",
-      "--offline",
+      "--prefer-offline",
       "--ignore-scripts",
       "--store-dir",
       storeDirectory,
