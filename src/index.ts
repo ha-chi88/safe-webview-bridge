@@ -1,11 +1,16 @@
-// Web-side bridge
-export { createWebViewBridge } from "./web";
-
-// Native-side bridge
-export { createNativeWebViewBridge } from "./native";
-
-// Type definitions
+export { createBridge, DEFAULT_LIMITS } from "./bridge.js";
+export { defineMessages } from "./schema.js";
 export type {
-  SendMessageOptions,
-  WebViewBridgeConfig,
-} from "./types";
+  Bridge,
+  BridgeContract,
+  BridgeError,
+  BridgeErrorCode,
+  BridgeLimits,
+  BridgeOptions,
+  JsonInput,
+  JsonPrimitive,
+  JsonValue,
+  MessageSchemas,
+  Result,
+  Transport,
+} from "./types.js";

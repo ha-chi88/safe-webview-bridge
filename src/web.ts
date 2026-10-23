@@ -1,162 +1,74 @@
-import type { z } from "zod";
-import type { SendMessageOptions, WebViewBridgeConfig } from "./types";
+import { createBridge } from "./bridge.js";
+import type { Bridge, BridgeContract, BridgeOptions } from "./types.js";
 
-// Extend Window type to define webkit property
-declare global {
-  interface Window {
-    webkit?: {
-      messageHandlers?: {
-        ReactNativeWebView?: {
-          postMessage: (message: string) => void;
-        };
-      };
-    };
-    ReactNativeWebView?: {
-      postMessage: (message: string) => void;
-    };
-    // Type definition for temporarily storing fallback functions
-    [key: string]: unknown;
-  }
+export interface WebMessageEvent {
+  readonly type: string;
+  readonly data?: unknown;
+  readonly origin: string;
+  readonly source: unknown;
+}
+export interface WebMessageTarget {
+  addEventListener(type: "message", listener: (event: WebMessageEvent) => void): void;
+  removeEventListener(type: "message", listener: (event: WebMessageEvent) => void): void;
+}
+export interface WebViewWindow extends WebMessageTarget {
+  readonly ReactNativeWebView?: { postMessage(message: string): void };
+  readonly document?: WebMessageTarget;
 }
 
-// Constant definitions
-const FALLBACK_KEY_PREFIX = "_webview_fallback_";
-const FALLBACK_CLEANUP_DELAY = 3000; // 3 seconds
-const CONSOLE_MESSAGES = {
-  INVALID_MESSAGE: "Invalid message format:",
-} as const;
-
-export const createWebViewBridge = <T extends z.ZodType>({
-  schema,
-}: WebViewBridgeConfig<T>) => {
-  // Send message to WebView
-  const sendMessage = ({
-    message,
-    fallback,
-  }: SendMessageOptions<z.infer<T>>) => {
-    // Validation
-    const result = schema.safeParse(message);
-    if (!result.success) {
-      console.error(CONSOLE_MESSAGES.INVALID_MESSAGE, result.error);
-      return;
-    }
-
-    // Setup fallback handling
-    const fallbackKey = fallback ? setupFallback(fallback) : undefined;
-
-    // Create message payload
-    const payload = createPayload(message, fallbackKey);
-
-    // Detect WebView environment and send
-    const messageSent = sendToWebView(payload);
-
-    // Execute fallback if message couldn't be sent (not in WebView environment)
-    if (!messageSent && fallback && fallbackKey) {
-      executeFallback(fallbackKey);
-    }
-  };
-
-  /**
-   * Determine if running in WebView environment
-   */
-  const isWebViewEnvironment = () => {
-    return canUseWebkitHandler() || canUseReactNativeHandler();
-  };
-
-  return {
-    sendMessage,
-    isWebViewEnvironment,
-  };
+export type WebBridgeOptions<Contract extends BridgeContract> = Omit<
+  BridgeOptions<Contract["toWeb"]>,
+  "transport"
+> & {
+  /** Defaults to window. Evaluated at creation for listeners, and again for each send. */
+  readonly getWindow?: () => WebViewWindow | undefined;
 };
 
-// Setup fallback function
-const setupFallback = (fallback: () => void): string => {
-  const fallbackKey = generateFallbackKey();
-
-  try {
-    // Temporarily store fallback function in window
-    window[fallbackKey] = fallback;
-
-    // Automatically clean up (prevent memory leaks)
-    scheduleFallbackCleanup(fallbackKey);
-  } catch (error) {
-    console.error("Failed to setup fallback:", error);
-  }
-
-  return fallbackKey;
-};
-
-// Generate unique fallback key
-const generateFallbackKey = (): string => {
-  return `${FALLBACK_KEY_PREFIX}${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-};
-
-// Schedule fallback cleanup
-const scheduleFallbackCleanup = (fallbackKey: string) => {
-  setTimeout(() => {
-    try {
-      if (window[fallbackKey]) {
-        delete window[fallbackKey];
-      }
-    } catch (error) {
-      // Ignore cleanup errors
-    }
-  }, FALLBACK_CLEANUP_DELAY);
-};
-
-// Create message payload
-const createPayload = <T>(
-  message: T,
-  fallbackKey: string | undefined,
-): T | (T & { _fallbackKey: string }) => {
-  if (fallbackKey) {
-    return Object.assign({}, message, { _fallbackKey: fallbackKey });
-  }
-  return message;
-};
-
-// Send message to WebView
-const sendToWebView = (payload: unknown): boolean => {
-  const serializedPayload = JSON.stringify(payload);
-
-  if (canUseWebkitHandler()) {
-    const handler = window.webkit?.messageHandlers?.ReactNativeWebView;
-    if (handler?.postMessage) {
-      handler.postMessage(serializedPayload);
-      return true;
-    }
-  }
-
-  if (canUseReactNativeHandler()) {
-    const webView = window.ReactNativeWebView;
-    if (webView?.postMessage) {
-      webView.postMessage(serializedPayload);
-      return true;
-    }
-  }
-
-  return false;
-};
-
-// Check if webkit handler is available
-const canUseWebkitHandler = (): boolean => {
-  return !!window.webkit?.messageHandlers?.ReactNativeWebView?.postMessage;
-};
-
-// Check if ReactNativeWebView handler is available
-const canUseReactNativeHandler = (): boolean => {
-  return !!window.ReactNativeWebView?.postMessage;
-};
-
-// Execute fallback
-const executeFallback = (fallbackKey: string) => {
-  try {
-    const fallback = window[fallbackKey] as (() => void) | undefined;
-    if (fallback && typeof fallback === "function") {
-      delete window[fallbackKey];
-      fallback();
-    }
-  } catch (error) {
-    console.error("Failed to execute fallback:", error);
-  }
-};
+/** Import is SSR-safe. Create a new instance after mounting/hydrating the WebView page. */
+export function createWebBridge<Contract extends BridgeContract = never>(
+  options: WebBridgeOptions<NoInfer<Contract>>,
+): Bridge<Contract["toWeb"], Contract["toNative"]> {
+  if (options.getWindow !== undefined && typeof options.getWindow !== "function")
+    throw new TypeError("getWindow must be a function");
+  const getWindow: () => WebViewWindow | undefined =
+    options.getWindow ?? (() => (typeof window === "undefined" ? undefined : window));
+  return createBridge<Contract["toWeb"], Contract["toNative"]>({
+    ...options,
+    transport: {
+      send(message) {
+        const target = getWindow()?.ReactNativeWebView;
+        if (!target) return false;
+        // oxlint-disable-next-line unicorn/require-post-message-target-origin -- ReactNativeWebView is a single-argument native transport, not window.postMessage.
+        target.postMessage(message);
+      },
+      subscribe(receive) {
+        const target = getWindow();
+        if (!target) return () => {};
+        const seen = new WeakSet<WebMessageEvent>();
+        const listener = (event: WebMessageEvent) => {
+          // RN WebView dispatches a synthetic MessageEvent with these defaults.
+          // Browser postMessage (including cross-origin frames) is a different transport.
+          if (event.origin !== "" || event.source !== null) return;
+          // Android dispatches on document; iOS dispatches on window. A bubbling event is one message.
+          if (seen.has(event)) return;
+          seen.add(event);
+          receive(event.data);
+        };
+        target.addEventListener("message", listener);
+        try {
+          target.document?.addEventListener("message", listener);
+        } catch (cause) {
+          target.removeEventListener("message", listener);
+          throw cause;
+        }
+        return () => {
+          try {
+            target.removeEventListener("message", listener);
+          } finally {
+            target.document?.removeEventListener("message", listener);
+          }
+        };
+      },
+    },
+  });
+}

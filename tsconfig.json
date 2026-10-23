@@ -1,15 +1,23 @@
 {
   "compilerOptions": {
-    "target": "es2022",
-    "module": "esnext",
-    "declaration": true,
-    "sourceMap": true,
-    "outDir": "./dist",
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "safe-webview-bridge": ["./src/index.ts"],
+      "safe-webview-bridge/web": ["./src/web.ts"],
+      "safe-webview-bridge/react-native": ["./src/react-native.ts"]
+    },
     "skipLibCheck": true,
-    "moduleResolution": "node"
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src", "test", "examples", "vitest.config.ts", "playwright.config.ts"]
 }

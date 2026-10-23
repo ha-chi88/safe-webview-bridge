@@ -11,19 +11,22 @@ if you do not have write access, then create a branch from `main`.
 ```sh
 corepack enable
 pnpm install --frozen-lockfile --ignore-scripts
-pnpm lint
-pnpm typecheck
-pnpm build
+pnpm check
+pnpm exec playwright install chromium
+CI=true pnpm test:browser
+pnpm audit:production
 ```
 
 CI also runs `npm pack --ignore-scripts` to verify package generation. Dependencies
 are installed without lifecycle scripts. Any change that needs an install script
 must explain why and narrowly scope the additional execution.
 
-The current main branch has no automated runtime test suite. Lint, type checks,
-builds, and packaging do not prove runtime correctness. Include reproduction or
-manual verification steps for behavior changes; add regression tests when adding
-a test harness.
+The quality gate checks lint and formatting, compile-time API contracts, runtime
+behavior, schema interoperability, and the package installed in an isolated
+consumer. Package checks exercise browser bundles and Metro bundles for iOS and
+Android. Browser tests cover real DOM message delivery and iframe-origin
+isolation. Add focused regression tests for behavior changes. These checks do
+not replace integration testing on the host application's supported devices.
 
 ## Pull requests
 

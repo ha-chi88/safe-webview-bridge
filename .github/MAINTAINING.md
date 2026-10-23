@@ -49,21 +49,22 @@ The `npm` GitHub environment allows only the `main` branch, requires approval fr
 there is one maintainer. Review the workflow commit, version, and successful CI
 before approving the environment.
 
-Before the next actual release, configure an npm trusted publisher for
-`safe-webview-bridge` in its npm package settings:
+The npm trusted publisher for `safe-webview-bridge` must match these values
+in its npm package settings:
 
-| Field | Value |
-| --- | --- |
-| Provider | GitHub Actions |
-| Organization or user | `ha-chi88` |
-| Repository | `safe-webview-bridge` |
-| Workflow filename | `publish.yml` |
-| Environment | `npm` |
-| Allowed action | Direct publishing with `npm publish` |
+| Field                | Value                                |
+| -------------------- | ------------------------------------ |
+| Provider             | GitHub Actions                       |
+| Organization or user | `ha-chi88`                           |
+| Repository           | `safe-webview-bridge`                |
+| Workflow filename    | `publish.yml`                        |
+| Environment          | `npm`                                |
+| Allowed action       | Direct publishing with `npm publish` |
 
-Do not add an `NPM_TOKEN` secret. Use the package's option to require 2FA and
-disallow token-based publishing once this release path is ready. Trusted
-publishing continues to work with that setting.
+Do not add an `NPM_TOKEN` secret. Keep the package's option to require 2FA and
+disallow bypass-2FA tokens enabled. Trusted publishing continues to work with
+that setting. `npm stage publish` is also allowed by npm; dist-tag management
+is not needed by this workflow and remains disabled.
 
 Configure the trusted publisher close to the release: npm requires a new
 configuration's first successful publish within two days. Creating it without
@@ -71,7 +72,7 @@ publishing is not a verified setup. See [npm's trusted publishing documentation]
 
 1. Change the version through a reviewed PR and wait for `Quality` to pass.
 2. Merge that PR, then select **Publish to npm → Run workflow** on **main**.
-3. Enter the exact stable version in `package.json`, such as `1.0.4`.
+3. Enter the exact stable version in `package.json`, such as `2.0.0`.
 4. Verify the commit and CI result, then approve the `npm` environment.
 5. Confirm the npm version and provenance refer to the intended repository and
    commit. An already published version cannot be overwritten; use a new version
