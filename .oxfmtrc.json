@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 90,
+  "tabWidth": 2,
+  "useTabs": false,
+  "sortImports": {},
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "test-results/**",
+    "playwright-report/**",
+    ".artifacts/**",
+    ".pnpm-store/**"
+  ]
+}

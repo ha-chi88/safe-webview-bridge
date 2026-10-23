@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "rules": {
+    "react/react-in-jsx-scope": "off"
+  },
+  "overrides": [
+    {
+      "files": ["scripts/check-package.mjs"],
+      "rules": {
+        "eslint/no-underscore-dangle": [
+          "error",
+          { "allow": ["__BRIDGE_DONE__", "__BRIDGE_RAW__"] }
+        ]
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "test-results/**",
+    "playwright-report/**",
+    ".artifacts/**",
+    ".pnpm-store/**"
+  ]
+}
