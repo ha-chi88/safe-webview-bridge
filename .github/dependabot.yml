@@ -8,10 +8,12 @@ updates:
       time: "09:00"
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     groups:
       development-patches:
         dependency-type: development
-        update-types: [patch]
+        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /

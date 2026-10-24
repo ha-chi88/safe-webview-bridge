@@ -27,12 +27,28 @@ before changing the required status-check name.
 - Default workflow token permissions are read-only; Actions cannot approve PRs.
 - All external contributors need approval to run fork PR workflows.
 - Allowed external actions are checkout, setup-node, upload-artifact,
-  download-artifact, and pnpm/action-setup. Full commit SHA references are required.
+  download-artifact, pnpm/action-setup, and the pinned dependabot/fetch-metadata.
+  Full commit SHA references are required.
 - Do not execute PR code with `pull_request_target`, privileged `workflow_run`,
   self-hosted runners, or publishing credentials.
 - CI does not share dependency caches with publishing jobs or use repository secrets.
-- Dependabot opens weekly npm and Actions update PRs. Review them and pass CI;
-  do not automatically merge dependency changes based only on their author.
+- Dependabot opens weekly npm and Actions update PRs with a seven-day cooldown for
+  routine npm releases. CI uses the official Dependabot metadata action to mark
+  stable forward minor/patch updates eligible (only patches within a `0.x` minor).
+  Unknown versions, major changes, prereleases and maintainer edits require review.
+- `Dependabot auto-merge` responds to completed CI runs. It verifies the exact bot
+  identity, every signed commit, latest head/base CI, successful `Quality` and
+  `Dependabot eligible` jobs, unchanged package scripts/contracts, dependency-only
+  files, and strict `main` protection before an expected-SHA squash merge. CI audits
+  development dependencies as well as production dependencies. Failed or stale
+  evidence never permits a merge. Workflow, source, dependency-set and range
+  operator changes require review. GitHub Actions upgrades require review.
+- The privileged merge job executes only the trusted workflow on `main`, with no
+  source checkout, installs, caches, artifacts, PAT, publishing secrets or OIDC.
+  This public repository uses GitHub's official metadata action and a repository-
+  specific workflow; it does not contain or fetch private workspace tooling.
+  Manual dispatch defaults to dry-run. Disable this workflow to pause merging;
+  preserve branch protection and CI. GitHub-token merges do not trigger push CI.
 - Dependabot alerts and security updates, secret scanning and push protection,
   and private vulnerability reporting are enabled in repository settings.
 

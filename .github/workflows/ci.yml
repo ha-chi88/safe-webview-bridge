@@ -16,6 +16,49 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  dependabot-metadata:
+    name: Dependabot metadata
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.id == 49699333 && github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.repository_id
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      eligible: ${{ steps.policy.outputs.eligible }}
+    steps:
+      - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        id: metadata
+      - name: Check stable package updates
+        id: policy
+        env:
+          METADATA: ${{ steps.metadata.outputs.updated-dependencies-json }}
+        run: |
+          eligible=false
+          if jq -e '
+            def stable: type == "string" and test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$");
+            type == "array" and length > 0 and all(.[];
+              .packageEcosystem == "npm_and_yarn" and .targetBranch == "main" and
+              .maintainerChanges == false and
+              (.prevVersion | stable) and (.newVersion | stable) and
+              (.prevVersion | split(".") | map(tonumber)) as $old |
+              (.newVersion | split(".") | map(tonumber)) as $new |
+              $new > $old and $new[0] == $old[0] and
+              ($old[0] != 0 or $new[1] == $old[1])
+            )
+          ' <<< "$METADATA" >/dev/null; then eligible=true; fi
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          echo "Dependabot automatic merge eligibility: $eligible. Major, unstable, unknown and maintainer-edited updates require review." >> "$GITHUB_STEP_SUMMARY"
+
+  dependabot-eligible:
+    name: Dependabot eligible
+    needs: dependabot-metadata
+    if: needs.dependabot-metadata.outputs.eligible == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - run: echo "Verified metadata permits this stable dependency update."
+
   quality:
     name: Quality
     runs-on: ubuntu-24.04
@@ -50,8 +93,8 @@ jobs:
       - name: Test browser message delivery and origin isolation
         run: pnpm test:browser
 
-      - name: Audit production dependencies
-        run: pnpm audit:production
+      - name: Audit production and development dependencies
+        run: pnpm audit
 
       - name: Pack without running lifecycle scripts
         run: |
