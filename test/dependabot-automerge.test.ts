@@ -176,8 +176,12 @@ describe("Dependabot policy in the actual CI workflow", () => {
     ["1.2.3", "1.2.4", true],
     ["1.2.3", "1.3.0", true],
     ["0.28.1", "0.28.2", true],
-    ["0.28.2", "0.29.0", false],
-    ["24.19.2", "26.6.5", false],
+    ["0.28.2", "0.29.0", true],
+    ["24.19.2", "26.6.5", true],
+    ["0.99.99", "1.0.0", true],
+    ["1.99.99", "2.0.0", true],
+    ["2.0.0", "1.99.99", false],
+    ["0.29.0", "0.28.99", false],
     ["1.2.3", "1.2.2", false],
     ["1.2.3", "1.3.0-rc.1", false],
     ["", "1.2.4", false],
@@ -207,25 +211,35 @@ describe("Dependabot policy in the actual CI workflow", () => {
 });
 
 describe("trusted Dependabot merge workflow", () => {
-  it("merges only the checked revision and supports a read-only dry run", () => {
-    const dry = executeMerge(fixture(), true);
-    expect(dry.status, dry.stderr).toBe(0);
-    expect(dry.merge).toBeNull();
-    expect(dry.summary).toContain("eligible");
-    const live = executeMerge(fixture());
-    expect(live.status, live.stderr).toBe(0);
-    expect(live.merge).toContain(`sha=${head}`);
-    expect(live.merge).toContain("merge_method=squash");
-  });
+  it.each(["^1.2.4", "^2.0.0"])(
+    "merges checked %s and supports a read-only dry run",
+    (version) => {
+      const data = fixture();
+      data.after.dependencies.example = version;
+      const dry = executeMerge(data, true);
+      expect(dry.status, dry.stderr).toBe(0);
+      expect(dry.merge).toBeNull();
+      expect(dry.summary).toContain("eligible");
+      const live = executeMerge(data);
+      expect(live.status, live.stderr).toBe(0);
+      expect(live.merge).toContain(`sha=${head}`);
+      expect(live.merge).toContain("merge_method=squash");
+    },
+  );
 
-  it("holds major or missing eligibility without a write", () => {
-    const data = fixture();
-    data.jobs[0]?.jobs.splice(2);
-    const result = executeMerge(data);
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.merge).toBeNull();
-    expect(result.summary).toContain("held");
-  });
+  it.each(["Quality", "Dependabot eligible"])(
+    "holds a major when %s has not succeeded",
+    (name) => {
+      const data = fixture();
+      data.after.dependencies.example = "^2.0.0";
+      for (const group of data.jobs)
+        group.jobs = group.jobs.filter((job) => job.name !== name);
+      const result = executeMerge(data);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.merge).toBeNull();
+      expect(result.summary).toContain("held");
+    },
+  );
 
   it("rejects source/script edits, stale CI, spoofed authors and missing protection", () => {
     const cases = [

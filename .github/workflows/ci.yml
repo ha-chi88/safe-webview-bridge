@@ -43,12 +43,11 @@ jobs:
               (.prevVersion | stable) and (.newVersion | stable) and
               (.prevVersion | split(".") | map(tonumber)) as $old |
               (.newVersion | split(".") | map(tonumber)) as $new |
-              $new > $old and $new[0] == $old[0] and
-              ($old[0] != 0 or $new[1] == $old[1])
+              $new > $old
             )
           ' <<< "$METADATA" >/dev/null; then eligible=true; fi
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-          echo "Dependabot automatic merge eligibility: $eligible. Major, unstable, unknown and maintainer-edited updates require review." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dependabot automatic merge eligibility: $eligible. Stable forward updates include majors; unstable, unknown and maintainer-edited updates require review." >> "$GITHUB_STEP_SUMMARY"
 
   dependabot-eligible:
     name: Dependabot eligible
