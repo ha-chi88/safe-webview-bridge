@@ -34,8 +34,8 @@ before changing the required status-check name.
 - CI does not share dependency caches with publishing jobs or use repository secrets.
 - Dependabot opens weekly npm and Actions update PRs with a seven-day cooldown for
   routine npm releases. CI uses the official Dependabot metadata action to mark
-  stable forward minor/patch updates eligible (only patches within a `0.x` minor).
-  Unknown versions, major changes, prereleases and maintainer edits require review.
+  stable forward updates eligible, including major and `0.x` minor updates.
+  Unknown versions, downgrades, prereleases and maintainer edits require review.
 - `Dependabot auto-merge` responds to completed CI runs. It verifies the exact bot
   identity, every signed commit, latest head/base CI, successful `Quality` and
   `Dependabot eligible` jobs, unchanged package scripts/contracts, dependency-only
