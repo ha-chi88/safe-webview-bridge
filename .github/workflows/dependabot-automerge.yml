@@ -1,0 +1,94 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pull-request:
+        description: Dependabot PR number to inspect
+        type: number
+        required: true
+      dry-run:
+        description: Inspect without merging
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-automerge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.repository == 'ha-chi88/safe-webview-bridge' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.actor.id == 49699333 && github.event.workflow_run.head_repository.id == github.repository_id))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      # No checkout, dependency installation, PR artifacts, publishing secrets or cache.
+      - name: Merge an eligible package update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          PR_NUMBER: ${{ inputs.pull-request }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: |
+          api="repos/ha-chi88/safe-webview-bridge"
+          if [ -n "$PR_NUMBER" ]; then
+            [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+            head=$(gh api "$api/pulls/$PR_NUMBER" --jq .head.sha)
+            RUN_ID=$(gh api "$api/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$head&per_page=100" --jq '.workflow_runs | max_by(.id) | .id')
+          fi
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          run=$(gh api "$api/actions/runs/$RUN_ID")
+          jq -e '.path == ".github/workflows/ci.yml" and .event == "pull_request" and .status == "completed" and .conclusion == "success" and .actor.id == 49699333 and .actor.login == "dependabot[bot]" and .head_repository.id == .repository.id and (.pull_requests | length) == 1' <<< "$run" >/dev/null
+          number=$(jq -r '.pull_requests[0].number' <<< "$run")
+          if [ -n "$PR_NUMBER" ]; then test "$number" = "$PR_NUMBER"; fi
+          pr=$(gh api "$api/pulls/$number")
+          head=$(jq -r .head.sha <<< "$pr")
+          base=$(jq -r .base.sha <<< "$pr")
+          jq -e --arg head "$head" --arg base "$base" '.head_sha == $head and .pull_requests[0].head.sha == $head and .pull_requests[0].base.sha == $base' <<< "$run" >/dev/null
+          jq -e '.state == "open" and .draft == false and .merged == false and .user.id == 49699333 and .user.login == "dependabot[bot]" and .user.type == "Bot" and .head.repo.full_name == "ha-chi88/safe-webview-bridge" and .base.repo.id == .head.repo.id and .base.ref == "main" and (.head.ref | startswith("dependabot/npm_and_yarn/"))' <<< "$pr" >/dev/null
+          latest=$(gh api "$api/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$head&per_page=100" --jq '.workflow_runs | max_by(.id) | .id')
+          test "$latest" = "$RUN_ID"
+          jobs=$(gh api --paginate --slurp "$api/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100")
+          if ! jq -e '[.[].jobs[]] as $jobs | ["Quality", "Dependabot metadata", "Dependabot eligible"] | all(.[]; . as $name | any($jobs[]; .name == $name and .status == "completed" and .conclusion == "success"))' <<< "$jobs" >/dev/null; then
+            echo "PR #$number held: quality or dependency eligibility has not succeeded." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          files=$(gh api --paginate --slurp "$api/pulls/$number/files?per_page=100")
+          jq -e --argjson count "$(jq .changed_files <<< "$pr")" 'add | length == $count and length > 0 and length <= 2 and all(.[]; .status == "modified" and .previous_filename == null and (.filename == "package.json" or .filename == "pnpm-lock.yaml"))' <<< "$files" >/dev/null
+          before=$(gh api "$api/contents/package.json?ref=$base" -H 'Accept: application/vnd.github.raw+json')
+          after=$(gh api "$api/contents/package.json?ref=$head" -H 'Accept: application/vnd.github.raw+json')
+          jq -en --argjson before "$before" --argjson after "$after" '
+            ($before | del(.dependencies, .devDependencies)) == ($after | del(.dependencies, .devDependencies)) and
+            all(["dependencies", "devDependencies"][]; . as $section |
+              ($before[$section] | keys) == ($after[$section] | keys) and
+              all($after[$section] | keys[]; . as $name |
+                $before[$section][$name] == $after[$section][$name] or
+                (if ($before[$section][$name] | test("^[~^]?[0-9]+\\.[0-9]+\\.[0-9]+$")) and
+                    ($after[$section][$name] | test("^[~^]?[0-9]+\\.[0-9]+\\.[0-9]+$")) then
+                  ($before[$section][$name] | capture("^(?<prefix>[~^]?)").prefix) ==
+                  ($after[$section][$name] | capture("^(?<prefix>[~^]?)").prefix)
+                 else false end)))
+          ' >/dev/null
+          commits=$(gh api --paginate --slurp "$api/pulls/$number/commits?per_page=100")
+          jq -e --argjson count "$(jq .commits <<< "$pr")" 'add | length == $count and length > 0 and all(.[]; .author.id == 49699333 and .author.login == "dependabot[bot]" and .committer.id == 19864447 and .committer.login == "web-flow" and .commit.verification.verified == true and .commit.verification.reason == "valid")' <<< "$commits" >/dev/null
+          rules=$(gh api --paginate --slurp "$api/rules/branches/main?per_page=100")
+          jq -e 'add as $rules | all(["pull_request", "deletion", "non_fast_forward"][]; . as $type | any($rules[]; .type == $type)) and any($rules[]; .type == "required_status_checks" and .parameters.strict_required_status_checks_policy == true and any(.parameters.required_status_checks[]; .context == "Quality" and .integration_id == 15368))' <<< "$rules" >/dev/null
+          current=$(gh api "$api/pulls/$number")
+          jq -e --arg head "$head" --arg base "$base" '.head.sha == $head and .base.sha == $base and .state == "open" and .draft == false and .mergeable == true and .mergeable_state == "clean"' <<< "$current" >/dev/null
+          test "$(gh api "$api/branches/main" --jq .commit.sha)" = "$base"
+          if [ "$DRY_RUN" = true ]; then
+            echo "PR #$number eligible at $head (dry run)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh api "$api/pulls/$number/merge" --method PUT -f sha="$head" -f merge_method=squash --jq 'if .merged then .sha else error("Merge rejected") end'
+            echo "PR #$number squash-merged after verified CI and dependency eligibility." >> "$GITHUB_STEP_SUMMARY"
+          fi
