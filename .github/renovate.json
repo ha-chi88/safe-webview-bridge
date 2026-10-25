@@ -36,6 +36,12 @@
       "groupName": "npm non-major dependencies"
     },
     {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["packageManager"],
+      "matchPackageNames": ["pnpm"],
+      "groupName": "pnpm toolchain"
+    },
+    {
       "matchManagers": ["github-actions", "dockerfile", "docker-compose"],
       "groupName": "CI and container dependencies",
       "pinDigests": true
