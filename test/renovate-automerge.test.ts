@@ -191,8 +191,9 @@ describe("Stable forward dependency policy in the trusted merge workflow", () =>
     data.before.dependencies.example = prevVersion;
     data.after.dependencies.example = newVersion;
     const result = executeMerge(data);
-    expect(result.status === 0, result.stderr).toBe(eligible);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.merge !== null).toBe(eligible);
+    if (!eligible) expect(result.summary).toContain("held:");
   });
 });
 
@@ -237,6 +238,10 @@ describe("trusted Renovate merge workflow", () => {
         f.after.scripts.check = "echo bypass";
       },
       (f: ReturnType<typeof fixture>) => {
+        Object.assign(f.before, { packageManager: "pnpm@10.6.2" });
+        Object.assign(f.after, { packageManager: "pnpm@10.34.7" });
+      },
+      (f: ReturnType<typeof fixture>) => {
         f.after.dependencies.example = "https://example.invalid/evil.tgz";
       },
       (f: ReturnType<typeof fixture>) => {
@@ -274,8 +279,10 @@ describe("trusted Renovate merge workflow", () => {
       const data = fixture();
       mutate(data);
       const result = executeMerge(data);
-      expect(result.status).not.toBe(0);
       expect(result.merge).toBeNull();
+      // A normal review hold can complete successfully, but must explain that
+      // no merge was authorized. Identity/CI/protection failures still fail closed.
+      expect(result.status !== 0 || result.summary.includes("held:")).toBe(true);
     }
   }, 20_000);
 });
