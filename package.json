@@ -88,7 +88,7 @@
     "vitest": "^5.0.5",
     "zod": "^4.6.7"
   },
-  "packageManager": "pnpm@10.34.7",
+  "packageManager": "pnpm@12.14.0",
   "pnpm": {
     "overrides": {
       "yaml@<2.8.3": "^2.9.1"
