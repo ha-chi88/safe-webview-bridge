@@ -152,3 +152,22 @@ Audit results are a point-in-time check and do not establish that all vulnerabil
 are known. The verification scripts use fixed, repository-owned build configuration;
 do not run development tools on untrusted glob/config input. Recheck dependency
 advisories before releases and keep the lockfile current.
+
+## Automated dependency updates
+
+The dedicated Groove08 Renovate App creates dependency update pull requests with
+GitHub-verified commits. Routine releases wait seven days; security advisories bypass
+that delay. Dependabot alerts remain enabled, while its update PR generation is disabled.
+Renovate cannot merge its own updates or run package lifecycle scripts.
+
+A separate workflow on the default branch checks the App's numeric bot identity,
+every commit signature, the exact current CI run and base commit, required branch
+rules, and stable forward dependency versions before squash-merging. Major and 0.x
+updates use the same gates. Source, workflow, override, script, dependency additions,
+range-style changes, prereleases and lockfile-only updates require human review.
+The merge job checks out no PR code and receives no publishing credentials.
+
+CI runs the full dependency audit, browser and package tests, and an immutable Trivy
+container for supported infrastructure configuration. Trivy has a read-only source
+mount and no Docker socket or credentials; any reported misconfiguration fails CI.
+The weekly CI run also reports newly disclosed problems in the current default branch.
