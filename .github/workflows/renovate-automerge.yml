@@ -64,10 +64,13 @@ jobs:
             exit 0
           fi
           files=$(gh api --paginate --slurp "$api/pulls/$number/files?per_page=100")
-          jq -e --argjson count "$(jq .changed_files <<< "$pr")" 'add | length == $count and length > 0 and length <= 2 and all(.[]; .status == "modified" and .previous_filename == null and (.filename == "package.json" or .filename == "pnpm-lock.yaml"))' <<< "$files" >/dev/null
+          if ! jq -e --argjson count "$(jq .changed_files <<< "$pr")" 'add | length == $count and length > 0 and length <= 2 and all(.[]; .status == "modified" and .previous_filename == null and (.filename == "package.json" or .filename == "pnpm-lock.yaml"))' <<< "$files" >/dev/null; then
+            echo "PR #$number held: changed files require review." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           before=$(gh api "$api/contents/package.json?ref=$base" -H 'Accept: application/vnd.github.raw+json')
           after=$(gh api "$api/contents/package.json?ref=$head" -H 'Accept: application/vnd.github.raw+json')
-          jq -en --argjson before "$before" --argjson after "$after" '
+          if ! jq -en --argjson before "$before" --argjson after "$after" '
             def version:
               if type == "string" then
                 capture("^(?<prefix>[~^]?)(?<major>0|[1-9][0-9]*)\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)$") |
@@ -83,7 +86,10 @@ jobs:
                 (([$before[$section][$name] | version][0] // null) as $old |
                  ([$after[$section][$name] | version][0] // null) as $new |
                  $old != null and $new != null and $old.prefix == $new.prefix and $new.numbers > $old.numbers)))
-          ' >/dev/null
+          ' >/dev/null; then
+            echo "PR #$number held: toolchain, policy or non-version changes require review." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           commits=$(gh api --paginate --slurp "$api/pulls/$number/commits?per_page=100")
           jq -e --argjson count "$(jq .commits <<< "$pr")" 'add | length == $count and length > 0 and all(.[]; .author.id == 347749962 and .author.login == "groove08-renovate[bot]" and .committer.id == 19864447 and .committer.login == "web-flow" and .commit.verification.verified == true and .commit.verification.reason == "valid")' <<< "$commits" >/dev/null
           rules=$(gh api --paginate --slurp "$api/rules/branches/main?per_page=100")
