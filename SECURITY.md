@@ -163,8 +163,20 @@ Renovate cannot merge its own updates or run package lifecycle scripts.
 A separate workflow on the default branch checks the App's numeric bot identity,
 every commit signature, the exact current CI run and base commit, required branch
 rules, and stable forward dependency versions before squash-merging. Major and 0.x
-updates use the same gates. Source, workflow, override, script, dependency additions,
-range-style changes, prereleases and lockfile-only updates require human review.
+updates use the same gates. Separate pnpm-only updates may change `packageManager`
+and the generated lockfile, preserving every other manifest field. The target must
+be an official stable release in `pnpm/pnpm` at least seven days old with no active
+reviewed, unreviewed or malware advisory in GitHub's Advisory Database. Missing or
+unavailable evidence never authorizes a merge.
+
+Runner-only updates may change existing job-level `runs-on` lines in the three
+repository workflows to a newer approved GitHub-hosted Ubuntu image (22.04, 24.04,
+26.04). The complete base and head files are compared; every other byte must stay
+unchanged. New images require an explicit policy update after GitHub declares them
+generally available. Actions, commands, permissions, triggers and publishing policy
+cannot change through this exception. Source, other workflow changes, overrides,
+scripts, dependency additions, mixed toolchain/library updates, range-style changes,
+prereleases and lockfile-only updates require human review.
 The merge job checks out no PR code and receives no publishing credentials.
 
 CI runs the full dependency audit, browser and package tests, and an immutable Trivy

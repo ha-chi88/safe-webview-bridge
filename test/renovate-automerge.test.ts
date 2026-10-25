@@ -29,7 +29,7 @@ const step = (file: string, name: string) => {
 };
 const mergeScript = step(
   ".github/workflows/renovate-automerge.yml",
-  "Merge an eligible package update",
+  "Merge a verified dependency or toolchain update",
 );
 const head = "a".repeat(40);
 const base = "b".repeat(40);
@@ -78,12 +78,14 @@ const fixture = () => ({
   ],
   before: {
     name: "safe-webview-bridge",
+    packageManager: "pnpm@10.6.2",
     scripts: { check: "vitest" },
     dependencies: { example: "^1.2.3" },
     devDependencies: {},
   },
   after: {
     name: "safe-webview-bridge",
+    packageManager: "pnpm@10.6.2",
     scripts: { check: "vitest" },
     dependencies: { example: "^1.2.4" },
     devDependencies: {},
@@ -115,25 +117,79 @@ const fixture = () => ({
   ],
   latest: 42,
   base,
+  release: {
+    tag_name: "v12.14.0",
+    draft: false,
+    prerelease: false,
+    published_at: "2020-01-01T00:00:00Z",
+  },
+  advisories: { reviewed: [[]], malware: [[]], unreviewed: [[]] } as Record<
+    string,
+    unknown
+  >,
+  workflows: {} as Record<string, { before: string; after: string }>,
+  failRoute: "",
 });
+
+const pnpmFixture = () => {
+  const data = fixture();
+  data.after = structuredClone(data.before);
+  data.after.packageManager = "pnpm@12.14.0";
+  return data;
+};
+const runnerFixture = () => {
+  const data = fixture();
+  const paths = [
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish.yml",
+    ".github/workflows/renovate-automerge.yml",
+  ];
+  data.pr.changed_files = paths.length;
+  data.files = [paths.map((filename) => ({ filename, status: "modified" }))];
+  for (const path of paths) {
+    const before = readFileSync(path, "utf8").replace(
+      /^    runs-on: ubuntu-(?:22|24|26)\.04$/gm,
+      "    runs-on: ubuntu-24.04",
+    );
+    data.workflows[path] = {
+      before,
+      after: before.replace(
+        /^    runs-on: ubuntu-24\.04$/gm,
+        "    runs-on: ubuntu-26.04",
+      ),
+    };
+  }
+  return data;
+};
 
 const executeMerge = (data: ReturnType<typeof fixture>, dryRun = false) => {
   const directory = temporary();
   const fixturePath = join(directory, "fixture.json");
   const mergePath = join(directory, "merge.json");
   const summary = join(directory, "summary.md");
+  const requestsPath = join(directory, "requests.json");
   writeFileSync(fixturePath, JSON.stringify(data));
   writeFileSync(summary, "");
   writeFileSync(mergePath, "null");
+  writeFileSync(requestsPath, "[]");
   writeFileSync(
     join(directory, "gh"),
     `#!/usr/bin/env node
 const fs = require('node:fs');
 const f = JSON.parse(fs.readFileSync(process.env.FIXTURE, 'utf8'));
 const args = process.argv.slice(2);
-const path = args.find(x => x.startsWith('repos/'));
+const path = args.find(x => x.startsWith('repos/') || x.startsWith('advisories?'));
+const requests = JSON.parse(fs.readFileSync(process.env.REQUESTS, 'utf8'));
+fs.writeFileSync(process.env.REQUESTS, JSON.stringify([...requests, path]));
+if (f.failRoute && path.includes(f.failRoute)) throw Error('Simulated API failure');
 let value;
-if (path.endsWith('/merge')) {
+if (path.startsWith('repos/pnpm/pnpm/releases/')) value = f.release;
+else if (path.startsWith('advisories?')) value = f.advisories[new URLSearchParams(path.split('?')[1]).get('type')];
+else if (path.includes('/contents/.github/workflows/')) {
+  const name = path.split('/contents/')[1].split('?')[0];
+  const content = f.workflows[name][path.endsWith(f.base) ? 'before' : 'after'];
+  value = { type: 'file', encoding: 'base64', size: Buffer.byteLength(content), content: Buffer.from(content).toString('base64') };
+} else if (path.endsWith('/merge')) {
   if (!args.includes('PUT')) throw Error('Unexpected write');
   fs.writeFileSync(process.env.MERGE, JSON.stringify(args));
   value = 'c'.repeat(40);
@@ -159,6 +215,7 @@ process.stdout.write(typeof value === 'string' || typeof value === 'number' ? St
       GH_TOKEN: "synthetic-test-token",
       FIXTURE: fixturePath,
       MERGE: mergePath,
+      REQUESTS: requestsPath,
       RUN_ID: "42",
       PR_NUMBER: "",
       DRY_RUN: String(dryRun),
@@ -169,8 +226,194 @@ process.stdout.write(typeof value === 'string' || typeof value === 'number' ? St
     ...result,
     merge: JSON.parse(readFileSync(mergePath, "utf8")),
     summary: readFileSync(summary, "utf8"),
+    requests: JSON.parse(readFileSync(requestsPath, "utf8")) as string[],
   };
 };
+
+const expectHeld = (data: ReturnType<typeof fixture>) => {
+  const result = executeMerge(data);
+  expect(result.merge).toBeNull();
+  expect(result.status !== 0 || result.summary.includes("held:")).toBe(true);
+};
+
+describe("verified pnpm updates", () => {
+  it.each(["10.34.7", "12.14.0"])("allows stable pnpm %s", (version) => {
+    const data = pnpmFixture();
+    data.after.packageManager = `pnpm@${version}`;
+    data.release.tag_name = `v${version}`;
+    const result = executeMerge(data);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.merge).toContain(`sha=${head}`);
+    expect(result.summary).toContain("pnpm eligibility");
+    for (const type of ["reviewed", "malware", "unreviewed"])
+      expect(result.requests).toContain(
+        `advisories?ecosystem=npm&affects=pnpm%40${version}&type=${type}&is_withdrawn=false&per_page=100`,
+      );
+  });
+
+  it.each([
+    "pnpm@10.6.2",
+    "pnpm@9.0.0",
+    "pnpm@13.0.0-rc.1",
+    "pnpm@latest",
+    "pnpm@^12.14.0",
+    "pnpm@012.14.0",
+    "npm@12.14.0",
+    "https://example.invalid/pnpm.tgz",
+  ])("holds unsupported package manager %s", (value) => {
+    const data = pnpmFixture();
+    data.after.packageManager = value;
+    expectHeld(data);
+  });
+
+  it("holds mixed dependency, script and policy edits", () => {
+    for (const change of [
+      { dependencies: { example: "^2.0.0" } },
+      { scripts: { check: "echo bypass" } },
+      { pnpm: { dangerouslyAllowAllBuilds: true } },
+    ]) {
+      const data = pnpmFixture();
+      Object.assign(data.after, change);
+      expectHeld(data);
+    }
+  });
+
+  it.each([
+    { published_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z") },
+    { published_at: "2099-01-01T00:00:00Z" },
+    { published_at: "invalid" },
+    { prerelease: true },
+    { draft: true },
+    { tag_name: "v99.0.0" },
+  ])("holds unqualified official release %j", (release) => {
+    const data = pnpmFixture();
+    Object.assign(data.release, release);
+    expectHeld(data);
+  });
+
+  it.each(["reviewed", "malware", "unreviewed"])(
+    "holds active %s advisories, including later pages",
+    (type) => {
+      const data = pnpmFixture();
+      data.advisories[type] = [[], [{ ghsa_id: "GHSA-test" }]];
+      expectHeld(data);
+    },
+  );
+
+  it.each([[], {}, null, { message: "unavailable" }])(
+    "rejects missing or malformed advisory responses %j",
+    (response) => {
+      const data = pnpmFixture();
+      data.advisories.reviewed = response;
+      expectHeld(data);
+    },
+  );
+
+  it.each(["releases/", "advisories?"])("fails closed if %s cannot be read", (route) => {
+    const data = pnpmFixture();
+    data.failRoute = route;
+    expectHeld(data);
+  });
+});
+
+describe("verified Ubuntu runner updates", () => {
+  it("allows only runner version changes in all three trusted workflows", () => {
+    const data = runnerFixture();
+    const result = executeMerge(data);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.merge).toContain(`sha=${head}`);
+    expect(result.summary).toContain("ubuntu-runners eligibility");
+    for (const file of Object.keys(data.workflows))
+      for (const ref of [head, base])
+        expect(result.requests).toContain(
+          `repos/ha-chi88/safe-webview-bridge/contents/${file}?ref=${ref}`,
+        );
+  });
+
+  it.each([
+    "ubuntu-latest",
+    "ubuntu-28.04",
+    "ubuntu-22.04",
+    "self-hosted",
+    "[self-hosted, ubuntu-26.04]",
+    "${{ matrix.runner }}",
+  ])("holds unapproved runner %s", (runner) => {
+    const data = runnerFixture();
+    data.workflows[".github/workflows/ci.yml"]!.after = data.workflows[
+      ".github/workflows/ci.yml"
+    ]!.after.replace(/^    runs-on: ubuntu-26\.04$/gm, `    runs-on: ${runner}`);
+    expectHeld(data);
+  });
+
+  it("holds any additional workflow change, including the merge policy itself", () => {
+    for (const file of Object.keys(runnerFixture().workflows)) {
+      const data = runnerFixture();
+      data.workflows[file]!.after += "\n# unrelated change\n";
+      expectHeld(data);
+    }
+    const data = runnerFixture();
+    const workflow = data.workflows[".github/workflows/ci.yml"]!;
+    workflow.after = workflow.after.replace("contents: read", "contents: write");
+    expectHeld(data);
+  });
+
+  it("rejects workflow additions, mixed files, incomplete evidence and API errors", () => {
+    for (const change of [
+      (data: ReturnType<typeof fixture>) => {
+        data.files[0]![0]!.status = "added";
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.files[0]![0]!.filename = "package.json";
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.files[0]![0]!.filename = ".github/workflows/evil.yml";
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.pr.changed_files++;
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.failRoute = "/contents/.github/";
+      },
+    ]) {
+      const data = runnerFixture();
+      change(data);
+      expectHeld(data);
+    }
+  });
+});
+
+describe.each([pnpmFixture, runnerFixture])("toolchain trust gates", (makeFixture) => {
+  it("never writes during a dry run", () => {
+    const result = executeMerge(makeFixture(), true);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.merge).toBeNull();
+    expect(result.summary).toContain("eligible");
+  });
+
+  it("still requires fresh CI, bot signatures and branch protection", () => {
+    for (const change of [
+      (data: ReturnType<typeof fixture>) => {
+        data.jobs[0]!.jobs[0]!.conclusion = "failure";
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.run.pull_requests[0]!.base.sha = "d".repeat(40);
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.commits[0]![0]!.commit.verification.verified = false;
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.pr.user = { ...bot, id: 1 };
+      },
+      (data: ReturnType<typeof fixture>) => {
+        data.rules = [[]];
+      },
+    ]) {
+      const data = makeFixture();
+      change(data);
+      expectHeld(data);
+    }
+  });
+});
 
 describe("Stable forward dependency policy in the trusted merge workflow", () => {
   it.each([

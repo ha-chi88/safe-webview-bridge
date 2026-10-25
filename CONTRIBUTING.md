@@ -34,13 +34,14 @@ not replace integration testing on the host application's supported devices.
 - Update the lockfile with pnpm when changing dependencies; do not hand-edit it.
 - Do not include `node_modules`, generated `dist` output, credentials, or private data.
 - Address review conversations and bring the branch up to date with `main`.
-- Wait for the `Quality` check, then a maintainer can squash-merge the PR.
-  Verified stable Dependabot npm updates, including majors, can be squash-merged automatically
-  after the same quality checks and the separate dependency eligibility gate.
+- Wait for `Quality` and `Infrastructure security`, then a maintainer can squash-merge the PR.
+  Verified Renovate dependency updates, including majors, can be squash-merged automatically.
+  Separate pnpm updates and approved Ubuntu runner version changes also qualify under
+  the additional checks described in [SECURITY.md](SECURITY.md#automated-dependency-updates).
 
 All changes to `main`, including maintainer changes, go through a PR. Direct
 changes, force pushes, and deletion of `main` are blocked by the repository
-ruleset. Maintainers and the narrowly scoped Dependabot workflow can merge. There is currently one maintainer,
+ruleset. Maintainers and the narrowly scoped Renovate workflow can merge. There is currently one maintainer,
 so a separate approving review is not required; this does not grant contributors
 merge access. `CODEOWNERS` requests maintainer review when applicable.
 
