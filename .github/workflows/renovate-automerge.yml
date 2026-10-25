@@ -127,8 +127,8 @@ jobs:
                 def runner:
                   {"    runs-on: ubuntu-22.04": 22, "    runs-on: ubuntu-24.04": 24, "    runs-on: ubuntu-26.04": 26}[.];
                 all([$before, $after][]; .type == "file" and .encoding == "base64" and .size > 0 and .size < 1000000) and
-                (($before.content | @base64d | split("\n")) as $old |
-                 ($after.content | @base64d | split("\n")) as $new |
+                (($before.content | gsub("\\s"; "") | @base64d | split("\n")) as $old |
+                 ($after.content | gsub("\\s"; "") | @base64d | split("\n")) as $new |
                  ($old | length) == ($new | length) and $old != $new and
                  all(range(0; $old | length); . as $i |
                    $old[$i] == $new[$i] or

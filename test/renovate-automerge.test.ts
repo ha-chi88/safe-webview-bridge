@@ -188,7 +188,9 @@ else if (path.startsWith('advisories?')) value = f.advisories[new URLSearchParam
 else if (path.includes('/contents/.github/workflows/')) {
   const name = path.split('/contents/')[1].split('?')[0];
   const content = f.workflows[name][path.endsWith(f.base) ? 'before' : 'after'];
-  value = { type: 'file', encoding: 'base64', size: Buffer.byteLength(content), content: Buffer.from(content).toString('base64') };
+  // GitHub's Contents API wraps its base64 payload, including a trailing newline.
+  const encoded = Buffer.from(content).toString('base64').match(/.{1,60}/g).join('\\n') + '\\n';
+  value = { type: 'file', encoding: 'base64', size: Buffer.byteLength(content), content: encoded };
 } else if (path.endsWith('/merge')) {
   if (!args.includes('PUT')) throw Error('Unexpected write');
   fs.writeFileSync(process.env.MERGE, JSON.stringify(args));
