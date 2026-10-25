@@ -5,6 +5,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    - cron: "43 2 * * 1"
   workflow_dispatch:
   workflow_call:
 
@@ -16,47 +18,27 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  dependabot-metadata:
-    name: Dependabot metadata
-    if: github.event_name == 'pull_request' && github.event.pull_request.user.id == 49699333 && github.actor == 'dependabot[bot]' && github.event.pull_request.head.repo.id == github.repository_id
+  infrastructure-security:
+    name: Infrastructure security
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      eligible: ${{ steps.policy.outputs.eligible }}
+    timeout-minutes: 10
+    env:
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
     steps:
-      - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-        id: metadata
-      - name: Check stable package updates
-        id: policy
-        env:
-          METADATA: ${{ steps.metadata.outputs.updated-dependencies-json }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check supported infrastructure with Trivy
         run: |
-          eligible=false
-          if jq -e '
-            def stable: type == "string" and test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$");
-            type == "array" and length > 0 and all(.[];
-              .packageEcosystem == "npm_and_yarn" and .targetBranch == "main" and
-              .maintainerChanges == false and
-              (.prevVersion | stable) and (.newVersion | stable) and
-              (.prevVersion | split(".") | map(tonumber)) as $old |
-              (.newVersion | split(".") | map(tonumber)) as $new |
-              $new > $old
-            )
-          ' <<< "$METADATA" >/dev/null; then eligible=true; fi
-          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-          echo "Dependabot automatic merge eligibility: $eligible. Stable forward updates include majors; unstable, unknown and maintainer-edited updates require review." >> "$GITHUB_STEP_SUMMARY"
-
-  dependabot-eligible:
-    name: Dependabot eligible
-    needs: dependabot-metadata
-    if: needs.dependabot-metadata.outputs.eligible == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 1
-    steps:
-      - run: echo "Verified metadata permits this stable dependency update."
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm --read-only --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=512m \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly" \
+            --mount "type=bind,source=$RUNNER_TEMP/trivy-cache,target=/cache" \
+            --workdir /workspace "$TRIVY_IMAGE" config --config '' \
+            --cache-dir /cache --ignorefile /dev/null --skip-dirs node_modules \
+            --skip-dirs .git --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 1 .
 
   quality:
     name: Quality

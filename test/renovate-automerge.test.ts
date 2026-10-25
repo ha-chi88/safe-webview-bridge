@@ -27,15 +27,14 @@ const step = (file: string, name: string) => {
   }
   return lines.join("\n");
 };
-const policyScript = step(".github/workflows/ci.yml", "Check stable package updates");
 const mergeScript = step(
-  ".github/workflows/dependabot-automerge.yml",
+  ".github/workflows/renovate-automerge.yml",
   "Merge an eligible package update",
 );
 const head = "a".repeat(40);
 const base = "b".repeat(40);
 const repository = { id: 123, full_name: "ha-chi88/safe-webview-bridge" };
-const bot = { id: 49699333, login: "dependabot[bot]", type: "Bot" };
+const bot = { id: 347749962, login: "groove08-renovate[bot]", type: "Bot" };
 const fixture = () => ({
   run: {
     id: 42,
@@ -55,7 +54,7 @@ const fixture = () => ({
     draft: false,
     merged: false,
     user: bot,
-    head: { sha: head, ref: "dependabot/npm_and_yarn/example-1.2.4", repo: repository },
+    head: { sha: head, ref: "renovate/example-1.2.4", repo: repository },
     base: { sha: base, ref: "main", repo: repository },
     changed_files: 2,
     commits: 1,
@@ -64,7 +63,7 @@ const fixture = () => ({
   },
   jobs: [
     {
-      jobs: ["Quality", "Dependabot metadata", "Dependabot eligible"].map((name) => ({
+      jobs: ["Quality", "Infrastructure security"].map((name) => ({
         name,
         status: "completed",
         conclusion: "success",
@@ -107,7 +106,9 @@ const fixture = () => ({
         type: "required_status_checks",
         parameters: {
           strict_required_status_checks_policy: true,
-          required_status_checks: [{ context: "Quality", integration_id: 15368 }],
+          required_status_checks: ["Quality", "Infrastructure security"].map(
+            (context) => ({ context, integration_id: 15368 }),
+          ),
         },
       },
     ],
@@ -171,7 +172,7 @@ process.stdout.write(typeof value === 'string' || typeof value === 'number' ? St
   };
 };
 
-describe("Dependabot policy in the actual CI workflow", () => {
+describe("Stable forward dependency policy in the trusted merge workflow", () => {
   it.each([
     ["1.2.3", "1.2.4", true],
     ["1.2.3", "1.3.0", true],
@@ -186,31 +187,16 @@ describe("Dependabot policy in the actual CI workflow", () => {
     ["1.2.3", "1.3.0-rc.1", false],
     ["", "1.2.4", false],
   ])("classifies %s → %s", (prevVersion, newVersion, eligible) => {
-    const directory = temporary();
-    const output = join(directory, "output");
-    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", policyScript], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        METADATA: JSON.stringify([
-          {
-            packageEcosystem: "npm_and_yarn",
-            targetBranch: "main",
-            maintainerChanges: false,
-            prevVersion,
-            newVersion,
-          },
-        ]),
-        GITHUB_OUTPUT: output,
-        GITHUB_STEP_SUMMARY: join(directory, "summary"),
-      },
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(readFileSync(output, "utf8").trim()).toBe(`eligible=${eligible}`);
+    const data = fixture();
+    data.before.dependencies.example = prevVersion;
+    data.after.dependencies.example = newVersion;
+    const result = executeMerge(data);
+    expect(result.status === 0, result.stderr).toBe(eligible);
+    expect(result.merge !== null).toBe(eligible);
   });
 });
 
-describe("trusted Dependabot merge workflow", () => {
+describe("trusted Renovate merge workflow", () => {
   it.each(["^1.2.4", "^2.0.0"])(
     "merges checked %s and supports a read-only dry run",
     (version) => {
@@ -227,7 +213,7 @@ describe("trusted Dependabot merge workflow", () => {
     },
   );
 
-  it.each(["Quality", "Dependabot eligible"])(
+  it.each(["Quality", "Infrastructure security"])(
     "holds a major when %s has not succeeded",
     (name) => {
       const data = fixture();
@@ -257,6 +243,18 @@ describe("trusted Dependabot merge workflow", () => {
         f.pr.user = { ...bot, id: 1234 };
       },
       (f: ReturnType<typeof fixture>) => {
+        f.pr.user = { id: 49699333, login: "dependabot[bot]", type: "Bot" };
+      },
+      (f: ReturnType<typeof fixture>) => {
+        f.after.dependencies.example = "~1.2.4";
+      },
+      (f: ReturnType<typeof fixture>) => {
+        f.after.dependencies.example = "^1.2.3";
+      },
+      (f: ReturnType<typeof fixture>) => {
+        f.commits[0]![0]!.commit.verification.verified = false;
+      },
+      (f: ReturnType<typeof fixture>) => {
         f.run.head_sha = base;
       },
       (f: ReturnType<typeof fixture>) => {
@@ -279,5 +277,5 @@ describe("trusted Dependabot merge workflow", () => {
       expect(result.status).not.toBe(0);
       expect(result.merge).toBeNull();
     }
-  });
+  }, 20_000);
 });

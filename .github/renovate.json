@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "enabledManagers": ["npm", "github-actions", "dockerfile", "docker-compose"],
+  "timezone": "Asia/Tokyo",
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency maintenance",
+  "branchPrefix": "renovate/",
+  "platformCommit": "enabled",
+  "automerge": false,
+  "platformAutomerge": false,
+  "ignoreScripts": true,
+  "ignorePlugins": true,
+  "minimumReleaseAge": "7 days",
+  "minimumReleaseAgeBehaviour": "timestamp-required",
+  "internalChecksFilter": "strict",
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "behind-base-branch",
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 7am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "minimumReleaseAge": "0 days",
+    "groupName": null,
+    "prConcurrentLimit": 3
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm non-major dependencies"
+    },
+    {
+      "matchManagers": ["github-actions", "dockerfile", "docker-compose"],
+      "groupName": "CI and container dependencies",
+      "pinDigests": true
+    },
+    {
+      "matchDepTypes": ["overrides", "pnpm.overrides", "pnpm-workspace.overrides"],
+      "enabled": false
+    }
+  ]
+}
