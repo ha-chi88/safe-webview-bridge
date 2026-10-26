@@ -4,6 +4,7 @@
   "enabledManagers": ["npm", "github-actions", "dockerfile", "docker-compose"],
   "timezone": "Asia/Tokyo",
   "dependencyDashboard": true,
+  "dependencyDashboardAutoclose": true,
   "dependencyDashboardTitle": "Dependency maintenance",
   "branchPrefix": "renovate/",
   "platformCommit": "enabled",
