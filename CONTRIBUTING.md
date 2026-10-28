@@ -5,10 +5,11 @@ vulnerabilities, follow [SECURITY.md](SECURITY.md) instead of opening a public i
 
 ## Development
 
-Use Node.js 24 and the pnpm version pinned in `package.json`. Fork the repository
+Use Node.js 26 and the pnpm version pinned in `package.json`. Fork the repository
 if you do not have write access, then create a branch from `main`.
 
 ```sh
+npm install --global corepack@0.34.6
 corepack enable
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm check
