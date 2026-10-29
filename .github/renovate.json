@@ -4,6 +4,7 @@
   "enabledManagers": ["npm", "github-actions", "dockerfile", "docker-compose"],
   "timezone": "Asia/Tokyo",
   "dependencyDashboard": true,
+  "dependencyDashboardAutoclose": true,
   "dependencyDashboardTitle": "Dependency maintenance",
   "branchPrefix": "renovate/",
   "platformCommit": "enabled",
@@ -34,6 +35,12 @@
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "npm non-major dependencies"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["packageManager"],
+      "matchPackageNames": ["pnpm"],
+      "groupName": "pnpm toolchain"
     },
     {
       "matchManagers": ["github-actions", "dockerfile", "docker-compose"],

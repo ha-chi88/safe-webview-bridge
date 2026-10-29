@@ -25,7 +25,7 @@ concurrency:
 jobs:
   merge:
     if: github.repository == 'ha-chi88/safe-webview-bridge' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.actor.id == 347749962 && github.event.workflow_run.head_repository.id == github.repository_id))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -33,7 +33,7 @@ jobs:
       actions: read
     steps:
       # No checkout, dependency installation, PR artifacts, publishing secrets or cache.
-      - name: Merge an eligible package update
+      - name: Merge a verified dependency or toolchain update
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
@@ -64,30 +64,83 @@ jobs:
             exit 0
           fi
           files=$(gh api --paginate --slurp "$api/pulls/$number/files?per_page=100")
-          if ! jq -e --argjson count "$(jq .changed_files <<< "$pr")" 'add | length == $count and length > 0 and length <= 2 and all(.[]; .status == "modified" and .previous_filename == null and (.filename == "package.json" or .filename == "pnpm-lock.yaml"))' <<< "$files" >/dev/null; then
+          if ! jq -e --argjson count "$(jq .changed_files <<< "$pr")" 'add | length == $count and length > 0 and length <= 3 and all(.[]; .status == "modified" and .previous_filename == null)' <<< "$files" >/dev/null; then
             echo "PR #$number held: changed files require review." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          before=$(gh api "$api/contents/package.json?ref=$base" -H 'Accept: application/vnd.github.raw+json')
-          after=$(gh api "$api/contents/package.json?ref=$head" -H 'Accept: application/vnd.github.raw+json')
-          if ! jq -en --argjson before "$before" --argjson after "$after" '
-            def version:
-              if type == "string" then
-                capture("^(?<prefix>[~^]?)(?<major>0|[1-9][0-9]*)\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)$") |
-                {prefix, numbers: [.major, .minor, .patch] | map(tonumber)}
-              else empty end;
-            ($before | del(.dependencies, .devDependencies)) == ($after | del(.dependencies, .devDependencies)) and
-            any(["dependencies", "devDependencies"][]; . as $section | $before[$section] != $after[$section]) and
-            all(["dependencies", "devDependencies"][]; . as $section |
-              ($before[$section] | type) == "object" and ($after[$section] | type) == "object" and
-              ($before[$section] | keys) == ($after[$section] | keys) and
-              all($after[$section] | keys[]; . as $name |
-                $before[$section][$name] == $after[$section][$name] or
-                (([$before[$section][$name] | version][0] // null) as $old |
-                 ([$after[$section][$name] | version][0] // null) as $new |
-                 $old != null and $new != null and $old.prefix == $new.prefix and $new.numbers > $old.numbers)))
-          ' >/dev/null; then
-            echo "PR #$number held: toolchain, policy or non-version changes require review." >> "$GITHUB_STEP_SUMMARY"
+          if jq -e 'add | length <= 2 and any(.[]; .filename == "package.json") and all(.[]; .filename == "package.json" or .filename == "pnpm-lock.yaml")' <<< "$files" >/dev/null; then
+            before=$(gh api "$api/contents/package.json?ref=$base" -H 'Accept: application/vnd.github.raw+json')
+            after=$(gh api "$api/contents/package.json?ref=$head" -H 'Accept: application/vnd.github.raw+json')
+            if ! kind=$(jq -ern --argjson before "$before" --argjson after "$after" '
+              def version:
+                if type == "string" then
+                  capture("^(?<prefix>[~^]?)(?<major>0|[1-9][0-9]*)\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)$") |
+                  {prefix, numbers: [.major, .minor, .patch] | map(tonumber)}
+                else empty end;
+              def forward($old; $new):
+                ([$old | version][0] // null) as $a |
+                ([$new | version][0] // null) as $b |
+                $a != null and $b != null and $a.prefix == $b.prefix and $b.numbers > $a.numbers;
+              if
+                ($before | del(.dependencies, .devDependencies)) == ($after | del(.dependencies, .devDependencies)) and
+                any(["dependencies", "devDependencies"][]; . as $section | $before[$section] != $after[$section]) and
+                all(["dependencies", "devDependencies"][]; . as $section |
+                  ($before[$section] | type) == "object" and ($after[$section] | type) == "object" and
+                  ($before[$section] | keys) == ($after[$section] | keys) and
+                  all($after[$section] | keys[]; . as $name |
+                    $before[$section][$name] == $after[$section][$name] or forward($before[$section][$name]; $after[$section][$name])))
+              then "dependencies"
+              elif
+                ($before | del(.packageManager)) == ($after | del(.packageManager)) and
+                all([$before.packageManager, $after.packageManager][]; type == "string" and test("^pnpm@[0-9]+\\.[0-9]+\\.[0-9]+$")) and
+                forward($before.packageManager | ltrimstr("pnpm@"); $after.packageManager | ltrimstr("pnpm@"))
+              then "pnpm"
+              else empty end
+            '); then
+              echo "PR #$number held: mixed, policy or non-version changes require review." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "$kind" = pnpm ]; then
+              version=$(jq -r '.packageManager | ltrimstr("pnpm@")' <<< "$after")
+              release=$(gh api "repos/pnpm/pnpm/releases/tags/v$version")
+              if ! jq -e --arg tag "v$version" '.tag_name == $tag and .draft == false and .prerelease == false and (.published_at | fromdateiso8601) <= (now - 604800)' <<< "$release" >/dev/null; then
+                echo "PR #$number held: pnpm must have an official stable release at least seven days old." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+              for advisory_type in reviewed malware unreviewed; do
+                advisories=$(gh api --paginate --slurp "advisories?ecosystem=npm&affects=pnpm%40$version&type=$advisory_type&is_withdrawn=false&per_page=100")
+                if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "array" and length == 0)' <<< "$advisories" >/dev/null; then
+                  echo "PR #$number held: pnpm has an active security advisory or incomplete advisory evidence." >> "$GITHUB_STEP_SUMMARY"
+                  exit 0
+                fi
+              done
+            fi
+          elif jq -e 'add | all(.[]; .filename == ".github/workflows/ci.yml" or .filename == ".github/workflows/publish.yml" or .filename == ".github/workflows/renovate-automerge.yml")' <<< "$files" >/dev/null; then
+            kind=ubuntu-runners
+            while IFS= read -r file; do
+              before=$(gh api "$api/contents/$file?ref=$base")
+              after=$(gh api "$api/contents/$file?ref=$head")
+              # Compare complete files, never a possibly truncated PR patch. Only
+              # existing job-level runner lines may change; no PR code is executed.
+              # Expand this list only after GitHub declares another image GA.
+              if ! jq -en --argjson before "$before" --argjson after "$after" '
+                def runner:
+                  {"    runs-on: ubuntu-22.04": 22, "    runs-on: ubuntu-24.04": 24, "    runs-on: ubuntu-26.04": 26}[.];
+                all([$before, $after][]; .type == "file" and .encoding == "base64" and .size > 0 and .size < 1000000) and
+                (($before.content | gsub("\\s"; "") | @base64d | split("\n")) as $old |
+                 ($after.content | gsub("\\s"; "") | @base64d | split("\n")) as $new |
+                 ($old | length) == ($new | length) and $old != $new and
+                 all(range(0; $old | length); . as $i |
+                   $old[$i] == $new[$i] or
+                   (($old[$i] | runner) as $a | ($new[$i] | runner) as $b |
+                    $a != null and $b != null and $b > $a)))
+              ' >/dev/null; then
+                echo "PR #$number held: workflow changes exceed approved Ubuntu runner versions." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            done < <(jq -r 'add[].filename' <<< "$files")
+          else
+            echo "PR #$number held: changed files require review." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           commits=$(gh api --paginate --slurp "$api/pulls/$number/commits?per_page=100")
@@ -98,8 +151,8 @@ jobs:
           jq -e --arg head "$head" --arg base "$base" '.head.sha == $head and .base.sha == $base and .state == "open" and .draft == false and .mergeable == true and .mergeable_state == "clean"' <<< "$current" >/dev/null
           test "$(gh api "$api/branches/main" --jq .commit.sha)" = "$base"
           if [ "$DRY_RUN" = true ]; then
-            echo "PR #$number eligible at $head (dry run)." >> "$GITHUB_STEP_SUMMARY"
+            echo "PR #$number eligible ($kind) at $head (dry run)." >> "$GITHUB_STEP_SUMMARY"
           else
             gh api "$api/pulls/$number/merge" --method PUT -f sha="$head" -f merge_method=squash --jq 'if .merged then .sha else error("Merge rejected") end'
-            echo "PR #$number squash-merged after verified CI and dependency eligibility." >> "$GITHUB_STEP_SUMMARY"
+            echo "PR #$number squash-merged after verified CI and $kind eligibility." >> "$GITHUB_STEP_SUMMARY"
           fi

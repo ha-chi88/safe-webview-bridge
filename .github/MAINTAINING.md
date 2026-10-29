@@ -5,7 +5,7 @@
 The active `main-protection` ruleset targets `main` with no bypass actors:
 
 - Require a pull request and resolve all review conversations.
-- Require the `Quality` check from GitHub Actions and an up-to-date branch.
+- Require `Quality` and `Infrastructure security` from GitHub Actions and an up-to-date branch.
 - Block branch deletion and force pushes.
 - Allow squash merges only.
 - Require zero approving reviews while there is one maintainer; do not require
@@ -19,7 +19,7 @@ and tokens when access needs change.
 
 When another maintainer joins, require at least one approving review, dismiss
 stale approvals when code changes, and consider required code owner reviews.
-Keep the `Quality` job name stable. Introduce and observe a replacement check
+Keep the required job names stable. Introduce and observe a replacement check
 before changing the required status-check name.
 
 ## Automation
@@ -32,25 +32,34 @@ before changing the required status-check name.
 - Do not execute PR code with `pull_request_target`, privileged `workflow_run`,
   self-hosted runners, or publishing credentials.
 - CI does not share dependency caches with publishing jobs or use repository secrets.
-- Dependabot opens weekly npm and Actions update PRs with a seven-day cooldown for
-  routine npm releases. CI uses the official Dependabot metadata action to mark
-  stable forward updates eligible, including major and `0.x` minor updates.
-  Unknown versions, downgrades, prereleases and maintainer edits require review.
-- `Dependabot auto-merge` responds to completed CI runs. It verifies the exact bot
+- The dedicated Renovate App creates GitHub-verified update commits. Routine npm
+  releases wait seven days; security advisories bypass that Renovate delay.
+  Renovate cannot merge PRs or run package lifecycle scripts. pnpm updates have
+  their own group so they cannot block routine library updates.
+- `Renovate auto-merge` responds to completed CI runs. It verifies the numeric bot
   identity, every signed commit, latest head/base CI, successful `Quality` and
-  `Dependabot eligible` jobs, unchanged package scripts/contracts, dependency-only
-  files, and strict `main` protection before an expected-SHA squash merge. CI audits
-  development dependencies as well as production dependencies. Failed or stale
-  evidence never permits a merge. Workflow, source, dependency-set and range
-  operator changes require review. GitHub Actions upgrades require review.
+  `Infrastructure security` jobs, and strict `main` protection before an expected-SHA
+  squash merge. CI audits development and production dependencies. Stable forward
+  version updates, including majors and `0.x` minors, preserve scripts, contracts,
+  dependency names and range operators. Failed or stale evidence never permits a merge.
+- Separate pnpm updates may change only `packageManager` and `pnpm-lock.yaml`.
+  They additionally require an official stable `pnpm/pnpm` release at least seven
+  days old and zero active reviewed, unreviewed or malware advisories for the exact
+  pnpm version. This toolchain age gate also applies to security-update PRs.
+- Runner-only PRs may change existing job-level `runs-on` lines in `ci.yml`,
+  `publish.yml` and `renovate-automerge.yml` to a newer approved Ubuntu image
+  (22.04, 24.04, 26.04). Full file contents must otherwise match exactly.
+  New images require a reviewed allowlist update after GitHub declares them GA.
+  Action references, commands, permissions, triggers, source, overrides, mixed
+  library/toolchain changes and other policy changes still require review.
 - The privileged merge job executes only the trusted workflow on `main`, with no
   source checkout, installs, caches, artifacts, PAT, publishing secrets or OIDC.
-  This public repository uses GitHub's official metadata action and a repository-
-  specific workflow; it does not contain or fetch private workspace tooling.
+  This public repository uses a repository-specific workflow and public GitHub APIs;
+  it does not contain or fetch private workspace tooling.
   Manual dispatch defaults to dry-run. Disable this workflow to pause merging;
   preserve branch protection and CI. GitHub-token merges do not trigger push CI.
-- Dependabot alerts and security updates, secret scanning and push protection,
-  and private vulnerability reporting are enabled in repository settings.
+- Dependabot alerts, secret scanning, push protection and private vulnerability
+  reporting remain enabled. Renovate handles update PRs, including security fixes.
 
 ## Publish to npm
 
