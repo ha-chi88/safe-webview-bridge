@@ -67,13 +67,13 @@
     "@standard-schema/spec": "^1.1.0"
   },
   "devDependencies": {
-    "@babel/runtime": "^8.0.7",
+    "@babel/runtime": "^8.0.8",
     "@playwright/test": "^1.64.1",
     "@react-native/babel-preset": "^0.88.0",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "arktype": "^2.2.9",
-    "effect": "^4.0.5",
+    "effect": "^4.0.6",
     "esbuild": "^0.28.2",
     "metro": "^0.87.1",
     "metro-config": "^0.87.1",
