@@ -73,7 +73,7 @@
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "arktype": "^2.2.9",
-    "effect": "^4.0.7",
+    "effect": "^4.1.0",
     "esbuild": "^0.28.2",
     "metro": "^0.87.2",
     "metro-config": "^0.87.2",
