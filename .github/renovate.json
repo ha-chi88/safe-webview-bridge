@@ -21,7 +21,7 @@
   "rangeStrategy": "bump",
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 7am on monday"]
+    "schedule": ["* * * * 1"]
   },
   "vulnerabilityAlerts": {
     "enabled": true,
